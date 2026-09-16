@@ -10,6 +10,7 @@ export interface OpenCodeRunResult {
   durationMs: number;
   durationFormatted: string;
   output: string;
+  resultText?: string;
   bugCause: string;
   actionsDone: string;
   rawOutput: string;
@@ -77,12 +78,13 @@ export async function runOpenCode(projectDir: string, prompt: string): Promise<O
 `;
   }
 
-  // Enhance prompt to ensure opencode provides structured feedback and follows Docker conventions
+  // Enhance prompt to ensure opencode provides direct answers, structured feedback and follows Docker conventions
   const enhancedPrompt = `${prompt}
 ${dockerInstructions}
-IMPORTANT: When you complete this task, conclude your response with a concise summary in this format:
-Bug Cause: <explain the root cause of the bug if applicable, or N/A>
-Actions Done: <bullet list of what was changed, created, or tested>
+IMPORTANT INSTRUCTIONS:
+- First, provide the direct answer, explanation, findings, or solution to the user's request clearly and concisely.
+- If you investigated or fixed a bug, explain the root cause under a line starting with "Bug Cause:". If not a bug or not applicable, do NOT write "Bug Cause: N/A" or mention Bug Cause.
+- If you modified files, created files, or ran tests, summarize them under a line starting with "Actions Done:".
 `;
 
   const executable = resolveOpencodeBinary();
@@ -162,12 +164,9 @@ Actions Done: <bullet list of what was changed, created, or tested>
       const combined = (stdoutData + "\n" + stderrData).trim();
       const success = code === 0;
 
-      let bugCause = success
-        ? "Identified and resolved according to requested instructions."
-        : `Execution failed with exit code ${code}.`;
-      let actionsDone = success
-        ? "Automated edits applied via OpenCode."
-        : "No changes applied due to execution error.";
+      let bugCause = "";
+      let actionsDone = "";
+      let resultText = "";
 
       if (!success) {
         // Check if there is an error JSON in stderr / stdout
@@ -193,23 +192,55 @@ Actions Done: <bullet list of what was changed, created, or tested>
           if (lines.length > 0) {
             bugCause = lines.slice(-2).join(" ");
             actionsDone = `Execution failed with exit code ${code}.`;
+          } else {
+            bugCause = `Execution failed with exit code ${code}.`;
           }
         }
       } else {
-        const bugMatch = combined.match(/Bug Cause:\s*([^\n]+(?:\n(?!(Actions Done|Summary):)[^\n]+)*)/i);
+        const primaryText = stdoutData.trim() || combined;
+
+        // 1. Extract Bug Cause if present and meaningful (not N/A, None, etc.)
+        const bugMatch = primaryText.match(/(?:^|\n)\s*(?:Bug Cause|Root Cause):\s*([^\n]+(?:\n(?!(Actions Done|Actions Taken|Changes Made|Summary|Result):)[^\n]+)*)/i);
         if (bugMatch && bugMatch[1]) {
-          bugCause = bugMatch[1].trim();
+          const candidate = bugMatch[1].trim();
+          if (!/^(n\/?a|none|not applicable|tidak ada|no bug)\.?$/i.test(candidate)) {
+            bugCause = candidate;
+          }
         }
 
-        const actionsMatch = combined.match(/Actions Done:\s*([\s\S]+?)(?:\n\n|\n[A-Z][a-z]+:|$)/i);
+        // 2. Extract Actions Done if present and meaningful
+        const actionsMatch = primaryText.match(/(?:^|\n)\s*(?:Actions Done|Actions Taken|Changes Made):\s*([\s\S]+?)(?:\n\n|\n[A-Z][a-z]+:|$)/i);
         if (actionsMatch && actionsMatch[1]) {
-          actionsDone = actionsMatch[1].trim();
-        } else {
-          // Fallback to last non-empty lines of output if parsing didn't find specific headers
-          const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
-          if (lines.length > 0) {
-            actionsDone = lines.slice(-4).join("\n");
+          const candidate = actionsMatch[1].trim();
+          if (!/^(n\/?a|none|not applicable|tidak ada)\.?$/i.test(candidate)) {
+            actionsDone = candidate;
           }
+        }
+
+        // 3. Extract main result/answer (text before Bug Cause or Actions Done)
+        const bugIdx = primaryText.search(/(?:^|\n)\s*(?:Bug Cause|Root Cause):/i);
+        const actionsIdx = primaryText.search(/(?:^|\n)\s*(?:Actions Done|Actions Taken|Changes Made):/i);
+
+        let cutIdx = -1;
+        if (bugIdx !== -1 && actionsIdx !== -1) {
+          cutIdx = Math.min(bugIdx, actionsIdx);
+        } else if (bugIdx !== -1) {
+          cutIdx = bugIdx;
+        } else if (actionsIdx !== -1) {
+          cutIdx = actionsIdx;
+        }
+
+        if (cutIdx > 0) {
+          resultText = primaryText.substring(0, cutIdx).trim();
+        } else if (cutIdx === -1) {
+          resultText = primaryText.trim();
+        } else {
+          resultText = "";
+        }
+
+        // Fallback: if no resultText, no bugCause, and no actionsDone
+        if (!resultText && !bugCause && !actionsDone) {
+          resultText = primaryText.trim() || "Task completed successfully.";
         }
       }
 
@@ -218,7 +249,8 @@ Actions Done: <bullet list of what was changed, created, or tested>
         durationMs,
         durationFormatted: formatDuration(durationMs),
         output: combined,
-        bugCause,
+        resultText,
+        bugCause: bugCause || (success ? "" : `Execution failed with exit code ${code}.`),
         actionsDone,
         rawOutput: combined,
         exitCode: code,

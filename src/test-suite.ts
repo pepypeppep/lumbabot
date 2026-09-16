@@ -6,8 +6,10 @@ import {
   formatGitPullMessage,
   formatGitPushMessage,
   formatGitStatusMessage,
+  formatForWhatsApp,
 } from "./responseFormatter.js";
 import { detectDockerEnvironment } from "./dockerDetector.js";
+import { detectNewlyModifiedFiles, WorkingTreeSnapshot } from "./gitManager.js";
 
 console.log("=== RUNNING LUMBA UNIT TESTS ===");
 
@@ -396,4 +398,139 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   console.log("✔ Test 19 passed: Model normalization prepends provider prefix 'bidang3/'");
 }
 
+// Test 20: Dynamic Response Formatting for Inquiry / Inspection (sync-db.sh case)
+{
+  const formatted = formatCommandDoneMessage({
+    projectName: "corpu",
+    projectPath: "/home/zsn/code/corpu",
+    opencodeResult: {
+      success: true,
+      durationMs: 13000,
+      durationFormatted: "13s",
+      output: "`sync-db.sh` untracked (not in git). Filesystem mtime: **2026-09-16 11:26:34 +0000**.\n\nBug Cause: N/A\nActions Done:\n- Checked git history for file (none, untracked)\n- Read filesystem mtime for creation time",
+      resultText: "`sync-db.sh` untracked (not in git). Filesystem mtime: **2026-09-16 11:26:34 +0000**.",
+      bugCause: "",
+      actionsDone: "- Checked git history for file (none, untracked)\n- Read filesystem mtime for creation time",
+      rawOutput: "",
+      exitCode: 0,
+    },
+    gitResult: {
+      isGit: true,
+      branch: "main",
+      filesChanged: 2,
+      filesList: ["unrelated1.txt", "unrelated2.txt"],
+      pushStatus: "Skipped (run '@lumba <project> git push' to push)",
+      isUpToDate: false,
+      summaryText: "2 files modified",
+    },
+    pullStatus: "Skipped",
+    newlyModifiedFiles: [], // No files were modified by this inquiry command!
+  });
+
+  // Verify the primary result is displayed
+  assert.ok(formatted.includes("💬 *Result*:"), "Should include Result header");
+  assert.ok(formatted.includes("`sync-db.sh` untracked"), "Should show the actual result");
+  assert.ok(formatted.includes("*2026-09-16 11:26:34 +0000*"), "Should format bold text for WhatsApp");
+
+  // Verify Bug Cause N/A is stripped dynamically
+  assert.strictEqual(formatted.includes("Bug Cause"), false, "Should NOT show Bug Cause when empty or N/A");
+  assert.strictEqual(formatted.includes("N/A"), false, "Should NOT include N/A in message");
+
+  // Verify false-positive git changes and push suggestions are omitted when newlyModifiedFiles is empty
+  assert.strictEqual(formatted.includes("Files Modified"), false, "Should NOT show Files Modified for read-only inquiry");
+  assert.strictEqual(formatted.includes("git push"), false, "Should NOT suggest git push when no files modified by command");
+
+  // Verify actions are still displayed
+  assert.ok(formatted.includes("🛠️ *Actions Completed*:"));
+  assert.ok(formatted.includes("Checked git history"));
+  console.log("✔ Test 20 passed: Dynamic inquiry response displays result and strips Bug Cause: N/A & false git push");
+}
+
+// Test 21: Dynamic Response Formatting for Bug Fix with Code Changes
+{
+  const formatted = formatCommandDoneMessage({
+    projectName: "corpu",
+    projectPath: "/home/zsn/code/corpu",
+    opencodeResult: {
+      success: true,
+      durationMs: 32000,
+      durationFormatted: "32s",
+      output: "Fixed auth token validation bug",
+      resultText: "Fixed auth token validation bug in auth middleware.",
+      bugCause: "Missing null check when user session expired",
+      actionsDone: "- Added null check in AuthController.php\n- Added unit tests",
+      rawOutput: "",
+      exitCode: 0,
+    },
+    gitResult: {
+      isGit: true,
+      branch: "main",
+      filesChanged: 2,
+      filesList: ["app/Http/Controllers/AuthController.php", "tests/Feature/AuthTest.php"],
+      pushStatus: "Skipped (run '@lumba <project> git push' to push)",
+      isUpToDate: false,
+      summaryText: "2 files modified",
+    },
+    pullStatus: "Skipped",
+    newlyModifiedFiles: ["app/Http/Controllers/AuthController.php", "tests/Feature/AuthTest.php"],
+  });
+
+  assert.ok(formatted.includes("💬 *Result*:"));
+  assert.ok(formatted.includes("🔍 *Bug Cause / Analysis*:"));
+  assert.ok(formatted.includes("Missing null check"));
+  assert.ok(formatted.includes("🛠️ *Actions Completed*:"));
+  assert.ok(formatted.includes("📦 *Files Modified* (2 file(s)):"));
+  assert.ok(formatted.includes("app/Http/Controllers/AuthController.php"));
+  assert.ok(formatted.includes("💡 *Next Step*: Gunakan `@lumba corpu git push`"));
+  console.log("✔ Test 21 passed: Dynamic bug fix response shows Result, Bug Cause, Actions, and Files Modified");
+}
+
+// Test 22: WhatsApp Markdown bold normalization
+{
+  const input = "File **README.md** created with `foo **bar** baz` and **bold text**.";
+  const normalized = formatForWhatsApp(input);
+  assert.strictEqual(normalized, "File *README.md* created with `foo **bar** baz` and *bold text*.");
+  console.log("✔ Test 22 passed: formatForWhatsApp converts **bold** outside code blocks to *bold*");
+}
+
+// Test 23: WorkingTreeSnapshot and detectNewlyModifiedFiles
+{
+  const preSnapshot: WorkingTreeSnapshot = {
+    isGit: true,
+    statusMap: new Map([
+      ["existing.txt", " M"],
+      ["untracked.sh", "??"],
+    ]),
+    diffHash: "diff --git a/existing.txt",
+  };
+
+  // Case 23a: OpenCode only read files, no modifications
+  const postSnapshotNoChanges: WorkingTreeSnapshot = {
+    isGit: true,
+    statusMap: new Map([
+      ["existing.txt", " M"],
+      ["untracked.sh", "??"],
+    ]),
+    diffHash: "diff --git a/existing.txt",
+  };
+  const diffA = detectNewlyModifiedFiles(preSnapshot, postSnapshotNoChanges);
+  assert.deepStrictEqual(diffA, [], "Should detect 0 newly modified files when repo status is unchanged");
+
+  // Case 23b: OpenCode edited a new file
+  const postSnapshotWithChanges: WorkingTreeSnapshot = {
+    isGit: true,
+    statusMap: new Map([
+      ["existing.txt", " M"],
+      ["untracked.sh", "??"],
+      ["new_feature.ts", "??"],
+    ]),
+    diffHash: "diff --git a/existing.txt",
+  };
+  const diffB = detectNewlyModifiedFiles(preSnapshot, postSnapshotWithChanges);
+  assert.deepStrictEqual(diffB, ["new_feature.ts"], "Should detect new_feature.ts as newly modified file");
+
+  console.log("✔ Test 23 passed: detectNewlyModifiedFiles accurately isolates changes made during run");
+}
+
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");
+

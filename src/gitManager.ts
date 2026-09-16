@@ -407,3 +407,57 @@ export async function getWorkingTreeStatus(repoPath: string): Promise<GitPostSyn
     summaryText: `Branch: ${branch}, ${filesChanged} file(s) changed`,
   };
 }
+
+export interface WorkingTreeSnapshot {
+  isGit: boolean;
+  statusMap: Map<string, string>;
+  diffHash: string;
+}
+
+export async function getWorkingTreeSnapshot(repoPath: string): Promise<WorkingTreeSnapshot> {
+  const isGitCheck = await runGit("git rev-parse --is-inside-work-tree", repoPath);
+  if (!isGitCheck.success || isGitCheck.stdout !== "true") {
+    return { isGit: false, statusMap: new Map(), diffHash: "" };
+  }
+
+  const statusRes = await runGit("git status --porcelain", repoPath);
+  const statusMap = new Map<string, string>();
+  if (statusRes.success && statusRes.stdout) {
+    for (const line of statusRes.stdout.split("\n").filter(Boolean)) {
+      const code = line.substring(0, 2);
+      const filePath = line.substring(3).trim();
+      statusMap.set(filePath, code);
+    }
+  }
+
+  const diffRes = await runGit("git diff", repoPath);
+  const diffHash = diffRes.stdout || "";
+
+  return { isGit: true, statusMap, diffHash };
+}
+
+export function detectNewlyModifiedFiles(
+  pre: WorkingTreeSnapshot,
+  post: WorkingTreeSnapshot
+): string[] {
+  if (!post.isGit) return [];
+
+  const newlyChanged: string[] = [];
+
+  for (const [file, code] of post.statusMap.entries()) {
+    if (!pre.statusMap.has(file) || pre.statusMap.get(file) !== code) {
+      newlyChanged.push(file);
+    }
+  }
+
+  if (pre.diffHash !== post.diffHash && newlyChanged.length === 0) {
+    for (const [file] of post.statusMap.entries()) {
+      if (!file.startsWith("??")) {
+        newlyChanged.push(file);
+      }
+    }
+  }
+
+  return newlyChanged;
+}
+

@@ -21,6 +21,8 @@ import {
   executeGitPush,
   executeGitStatus,
   getWorkingTreeStatus,
+  getWorkingTreeSnapshot,
+  detectNewlyModifiedFiles,
 } from "./gitManager.js";
 import { runOpenCode } from "./opencodeRunner.js";
 import {
@@ -288,19 +290,27 @@ async function handleCommand(
       console.log(`[Lumba] Skipping git pull before execution (auto-pull disabled).`);
     }
 
+    // Take snapshot of working tree before execution to detect changes made specifically by this command
+    const preGitSnapshot = await getWorkingTreeSnapshot(projectPath);
+
     // 5. Run OpenCode in YOLO mode with configured model
     console.log(`[Lumba] Executing OpenCode on ${projectPath}...`);
     const opencodeResult = await runOpenCode(projectPath, prompt);
     console.log(`[Lumba] OpenCode finished in ${opencodeResult.durationFormatted}. Exit code: ${opencodeResult.exitCode}`);
 
-    // 6. Post-execution Git status (ONLY commit & push if CONFIG.autoPush is explicitly enabled AND OpenCode succeeded)
+    // Take snapshot of working tree after execution to detect newly created or modified files
+    const postGitSnapshot = await getWorkingTreeSnapshot(projectPath);
+    const newlyModifiedFiles = detectNewlyModifiedFiles(preGitSnapshot, postGitSnapshot);
+    console.log(`[Lumba] Newly modified files by this run: ${newlyModifiedFiles.length} file(s)`);
+
+    // 6. Post-execution Git status (ONLY commit & push if CONFIG.autoPush is explicitly enabled AND OpenCode succeeded AND files actually changed)
     let postGit: any;
-    if (CONFIG.autoPush && opencodeResult.success) {
-      console.log(`[Lumba] Auto-push enabled: Performing post-execution git commit & push on ${projectPath}...`);
+    if (CONFIG.autoPush && opencodeResult.success && newlyModifiedFiles.length > 0) {
+      console.log(`[Lumba] Auto-push enabled and files modified: Performing post-execution git commit & push on ${projectPath}...`);
       postGit = await postExecutionGitSync(projectPath, parsed.prompt || "Auto-fix");
       console.log(`[Lumba] Git push result: ${postGit.pushStatus}`);
     } else {
-      console.log(`[Lumba] Skipping git push (auto-push disabled or execution failed). Inspecting working tree status...`);
+      console.log(`[Lumba] Skipping git push (auto-push disabled or no new changes). Inspecting working tree status...`);
       postGit = await getWorkingTreeStatus(projectPath);
     }
 
@@ -311,6 +321,7 @@ async function handleCommand(
       opencodeResult,
       gitResult: postGit,
       pullStatus: preGitPullStatus,
+      newlyModifiedFiles,
     });
 
     // 8. Reply back to the user

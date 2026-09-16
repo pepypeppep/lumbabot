@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { CONFIG } from "./config.js";
+import { detectDockerEnvironment } from "./dockerDetector.js";
 
 export interface OpenCodeRunResult {
   success: boolean;
@@ -23,9 +24,31 @@ function formatDuration(ms: number): string {
 export async function runOpenCode(projectDir: string, prompt: string): Promise<OpenCodeRunResult> {
   const startTime = Date.now();
 
-  // Enhance prompt to ensure opencode provides structured feedback
-  const enhancedPrompt = `${prompt}
+  // Detect if this project uses Docker
+  const dockerInfo = detectDockerEnvironment(projectDir);
+  let dockerInstructions = "";
 
+  if (dockerInfo.hasLaravelSail) {
+    dockerInstructions = `
+[ENVIRONMENT NOTE: This project uses Laravel Sail]
+- Whenever executing runtime commands (e.g. php artisan, composer, phpunit, npm), execute them inside the container via:
+  ${dockerInfo.recommendedCommandPrefix} artisan <command>
+  (e.g., \`${dockerInfo.recommendedCommandPrefix} artisan migrate\`)
+`;
+  } else if (dockerInfo.hasDockerCompose) {
+    dockerInstructions = `
+[ENVIRONMENT NOTE: This project runs inside Docker Compose]
+- Docker Compose configuration detected: ${dockerInfo.composeFileName} (Services: ${dockerInfo.detectedServices.join(", ") || "app"}).
+- Whenever executing application commands (e.g. php artisan, composer, npm, yarn, python, tests), DO NOT run them on the host system.
+- Execute them inside the running container using non-interactive flag:
+  \`${dockerInfo.recommendedCommandPrefix} <command>\`
+  (e.g., \`${dockerInfo.recommendedCommandPrefix} php artisan migrate\`)
+`;
+  }
+
+  // Enhance prompt to ensure opencode provides structured feedback and follows Docker conventions
+  const enhancedPrompt = `${prompt}
+${dockerInstructions}
 IMPORTANT: When you complete this task, conclude your response with a concise summary in this format:
 Bug Cause: <explain the root cause of the bug if applicable, or N/A>
 Actions Done: <bullet list of what was changed, created, or tested>

@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { parseIncomingMessage } from "./messageParser.js";
 import { scanProjectDirectory } from "./projectScanner.js";
 import { formatCommandDoneMessage } from "./responseFormatter.js";
+import { detectDockerEnvironment } from "./dockerDetector.js";
 
 console.log("=== RUNNING LUMBA UNIT TESTS ===");
 
@@ -74,6 +75,13 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   assert.ok(formatted.includes("Null check was missing"));
   assert.ok(formatted.includes("Pushed successfully to origin/main"));
   console.log("✔ Test 5 passed: Response formatting output");
+}
+
+// Test 6: Docker Detector
+{
+  const result = detectDockerEnvironment("/tmp");
+  assert.strictEqual(result.hasDockerCompose, false);
+  console.log("✔ Test 6 passed: Docker environment detector");
 }
 
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");

@@ -24,3 +24,6 @@ services:
 
       # 4. OpenCode configuration & provider keys
       - ${HOME}/.config/opencode:/root/.config/opencode:ro
+
+      # 5. Host Docker daemon socket: allows opencode to run docker compose exec inside sibling project containers
+      - /var/run/docker.sock:/var/run/docker.sock

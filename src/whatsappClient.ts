@@ -293,14 +293,14 @@ async function handleCommand(
     const opencodeResult = await runOpenCode(projectPath, prompt);
     console.log(`[Lumba] OpenCode finished in ${opencodeResult.durationFormatted}. Exit code: ${opencodeResult.exitCode}`);
 
-    // 6. Post-execution Git status (ONLY commit & push if CONFIG.autoPush is explicitly enabled)
+    // 6. Post-execution Git status (ONLY commit & push if CONFIG.autoPush is explicitly enabled AND OpenCode succeeded)
     let postGit: any;
-    if (CONFIG.autoPush && opencodeResult.exitCode !== -1) {
+    if (CONFIG.autoPush && opencodeResult.success) {
       console.log(`[Lumba] Auto-push enabled: Performing post-execution git commit & push on ${projectPath}...`);
       postGit = await postExecutionGitSync(projectPath, parsed.prompt || "Auto-fix");
       console.log(`[Lumba] Git push result: ${postGit.pushStatus}`);
     } else {
-      console.log(`[Lumba] Skipping git push (auto-push disabled). Inspecting working tree status...`);
+      console.log(`[Lumba] Skipping git push (auto-push disabled or execution failed). Inspecting working tree status...`);
       postGit = await getWorkingTreeStatus(projectPath);
     }
 

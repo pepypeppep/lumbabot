@@ -61,18 +61,19 @@ export async function runOpenCode(projectDir: string, prompt: string): Promise<O
   if (dockerInfo.hasLaravelSail) {
     dockerInstructions = `
 [ENVIRONMENT NOTE: This project uses Laravel Sail]
-- Whenever executing runtime commands (e.g. php artisan, composer, phpunit, npm), execute them inside the container via:
-  ${dockerInfo.recommendedCommandPrefix} artisan <command>
-  (e.g., \`${dockerInfo.recommendedCommandPrefix} artisan migrate\`)
+- IF AND ONLY IF you need to execute runtime commands (e.g. php artisan, composer, phpunit, npm), execute them inside the container via:
+  ${dockerInfo.recommendedCommandPrefix} <command>
+- DO NOT run database migrations (e.g. artisan migrate) or destructive commands unless explicitly requested by the user prompt.
+- For code inspections, file checks, or questions, answer directly without running container commands.
 `;
   } else if (dockerInfo.hasDockerCompose) {
     dockerInstructions = `
 [ENVIRONMENT NOTE: This project runs inside Docker Compose]
 - Docker Compose configuration detected: ${dockerInfo.composeFileName} (Services: ${dockerInfo.detectedServices.join(", ") || "app"}).
-- Whenever executing application commands (e.g. php artisan, composer, npm, yarn, python, tests), DO NOT run them on the host system.
-- Execute them inside the running container using non-interactive flag:
+- IF AND ONLY IF you need to execute application commands (e.g. tests, composer), execute them inside the running container using:
   \`${dockerInfo.recommendedCommandPrefix} <command>\`
-  (e.g., \`${dockerInfo.recommendedCommandPrefix} php artisan migrate\`)
+- DO NOT run database migrations or destructive commands unless explicitly requested by the user prompt.
+- For code inspections, file checks, or questions, answer directly without running container commands.
 `;
   }
 
@@ -110,7 +111,9 @@ Actions Done: <bullet list of what was changed, created, or tested>
   const mergedPath = [...new Set([...candidateBinDirs, ...currentPath.split(path.delimiter)])].join(path.delimiter);
 
   return new Promise((resolve) => {
-    console.log(`[OpenCode] Spawning: ${executable} ${args.join(" ")} in ${projectDir}`);
+    const shortPrompt = prompt.replace(/[\r\n]+/g, " ").trim();
+    const promptPreview = shortPrompt.length > 80 ? `${shortPrompt.slice(0, 77)}...` : shortPrompt;
+    console.log(`[OpenCode] Spawning: ${executable} run --dir ${projectDir} -m ${CONFIG.opencodeModel} ${CONFIG.opencodeFlags.join(" ")} "${promptPreview}"`);
 
     const child = spawn(executable, args, {
       cwd: projectDir,
@@ -157,29 +160,61 @@ Actions Done: <bullet list of what was changed, created, or tested>
     child.on("close", (code) => {
       const durationMs = Date.now() - startTime;
       const combined = (stdoutData + "\n" + stderrData).trim();
+      const success = code === 0;
 
-      // Parse Bug Cause & Actions Done if present
-      let bugCause = "Identified and resolved according to requested instructions.";
-      let actionsDone = "Automated edits applied via OpenCode.";
+      let bugCause = success
+        ? "Identified and resolved according to requested instructions."
+        : `Execution failed with exit code ${code}.`;
+      let actionsDone = success
+        ? "Automated edits applied via OpenCode."
+        : "No changes applied due to execution error.";
 
-      const bugMatch = combined.match(/Bug Cause:\s*([^\n]+(?:\n(?!(Actions Done|Summary):)[^\n]+)*)/i);
-      if (bugMatch && bugMatch[1]) {
-        bugCause = bugMatch[1].trim();
-      }
+      if (!success) {
+        // Check if there is an error JSON in stderr / stdout
+        const jsonStart = combined.indexOf("{");
+        const jsonEnd = combined.lastIndexOf("}");
+        let parsedErr: any = null;
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try {
+            parsedErr = JSON.parse(combined.slice(jsonStart, jsonEnd + 1));
+          } catch {
+            // not valid JSON
+          }
+        }
 
-      const actionsMatch = combined.match(/Actions Done:\s*([\s\S]+?)(?:\n\n|\n[A-Z][a-z]+:|$)/i);
-      if (actionsMatch && actionsMatch[1]) {
-        actionsDone = actionsMatch[1].trim();
+        if (parsedErr) {
+          const errName = parsedErr.name || "Error";
+          const errMsg = parsedErr.data?.message || parsedErr.message || "Unknown error";
+          const errRef = parsedErr.data?.ref ? ` [ref: ${parsedErr.data.ref}]` : "";
+          bugCause = `OpenCode Error: ${errName} - ${errMsg}${errRef}`;
+          actionsDone = `Execution aborted: ${errMsg}`;
+        } else {
+          const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
+          if (lines.length > 0) {
+            bugCause = lines.slice(-2).join(" ");
+            actionsDone = `Execution failed with exit code ${code}.`;
+          }
+        }
       } else {
-        // Fallback to last non-empty lines of output if parsing didn't find specific headers
-        const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
-        if (lines.length > 0) {
-          actionsDone = lines.slice(-4).join("\n");
+        const bugMatch = combined.match(/Bug Cause:\s*([^\n]+(?:\n(?!(Actions Done|Summary):)[^\n]+)*)/i);
+        if (bugMatch && bugMatch[1]) {
+          bugCause = bugMatch[1].trim();
+        }
+
+        const actionsMatch = combined.match(/Actions Done:\s*([\s\S]+?)(?:\n\n|\n[A-Z][a-z]+:|$)/i);
+        if (actionsMatch && actionsMatch[1]) {
+          actionsDone = actionsMatch[1].trim();
+        } else {
+          // Fallback to last non-empty lines of output if parsing didn't find specific headers
+          const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
+          if (lines.length > 0) {
+            actionsDone = lines.slice(-4).join("\n");
+          }
         }
       }
 
       resolve({
-        success: code === 0,
+        success,
         durationMs,
         durationFormatted: formatDuration(durationMs),
         output: combined,

@@ -27,9 +27,18 @@ function resolveProjectsBaseDir(): string {
   return envDir ? path.resolve(envDir) : linuxServerDir;
 }
 
+function resolveOpencodeModel(): string {
+  const model = process.env.OPENCODE_MODEL || "deepseek/deepseek-v4-flash";
+  // Auto-normalize if user configured ai-bid3/... without provider prefix bidang3/
+  if (model.startsWith("ai-bid3/")) {
+    return `bidang3/${model}`;
+  }
+  return model;
+}
+
 export const CONFIG = {
   projectsBaseDir: resolveProjectsBaseDir(),
-  opencodeModel: process.env.OPENCODE_MODEL || "deepseek/deepseek-v4-flash",
+  opencodeModel: resolveOpencodeModel(),
   opencodePath: process.env.OPENCODE_PATH || "opencode",
   // --auto runs opencode in YOLO / auto-approve mode for permissions
   opencodeFlags: (process.env.OPENCODE_FLAGS || "--auto").split(" ").filter(Boolean),

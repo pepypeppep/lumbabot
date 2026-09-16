@@ -65,6 +65,10 @@ async function runGit(cmd: string, cwd: string): Promise<{ stdout: string; stder
         GIT_TERMINAL_PROMPT: "0",
         // Automatically accept new SSH host keys without prompt
         GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new",
+        // Bypass dubious ownership checks when container user differs from directory owner
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "safe.directory",
+        GIT_CONFIG_VALUE_0: "*",
       },
     });
     return {

@@ -375,4 +375,25 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   console.log("✔ Test 17 passed: formatGitStatusMessage output");
 }
 
+// Test 18: OpenCode JSON UnknownError parsing in response formatting
+{
+  const rawErr = `[OpenCode ERR] Error: {\n  "name": "UnknownError",\n  "data": {\n    "message": "Unexpected server error. Check server logs for details.",\n    "ref": "err_8eaeb0a8"\n  }\n}`;
+  const jsonStart = rawErr.indexOf("{");
+  const jsonEnd = rawErr.lastIndexOf("}");
+  assert.ok(jsonStart !== -1 && jsonEnd > jsonStart);
+  const parsedErr = JSON.parse(rawErr.slice(jsonStart, jsonEnd + 1));
+  assert.strictEqual(parsedErr.name, "UnknownError");
+  assert.strictEqual(parsedErr.data.ref, "err_8eaeb0a8");
+  assert.strictEqual(parsedErr.data.message, "Unexpected server error. Check server logs for details.");
+  console.log("✔ Test 18 passed: OpenCode nested JSON error parsed successfully");
+}
+
+// Test 19: OpenCode Model Normalization
+{
+  const rawModel = "ai-bid3/deepseek-v4-flash";
+  const normalized = rawModel.startsWith("ai-bid3/") ? `bidang3/${rawModel}` : rawModel;
+  assert.strictEqual(normalized, "bidang3/ai-bid3/deepseek-v4-flash");
+  console.log("✔ Test 19 passed: Model normalization prepends provider prefix 'bidang3/'");
+}
+
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");

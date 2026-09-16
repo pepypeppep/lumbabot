@@ -11,10 +11,6 @@ services:
       - PROJECTS_BASE_DIR=/home/zsn/code
       - OPENCODE_MODEL=deepseek/deepseek-v4-flash
       - OPENCODE_FLAGS=--auto
-      - GIT_AUTHOR_NAME=Lumba Bot
-      - GIT_AUTHOR_EMAIL=lumba@vhessel.local
-      - GIT_COMMITTER_NAME=Lumba Bot
-      - GIT_COMMITTER_EMAIL=lumba@vhessel.local
     volumes:
       # 1. WhatsApp session state (survives restarts so you only scan QR once)
       - ./auth_info_baileys:/app/auth_info_baileys

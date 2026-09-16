@@ -37,8 +37,6 @@ export const CONFIG = {
   autoPull: process.env.AUTO_PULL !== "false",
   autoPush: process.env.AUTO_PUSH !== "false",
   authSessionDir: process.env.AUTH_SESSION_DIR || "auth_info_baileys",
-  gitAuthorName: process.env.GIT_AUTHOR_NAME || "Lumba Bot",
-  gitAuthorEmail: process.env.GIT_AUTHOR_EMAIL || "lumba@bot.local",
   allowedNumbers: process.env.ALLOWED_NUMBERS
     ? process.env.ALLOWED_NUMBERS.split(",").map((s) => s.trim().replace(/[^0-9]/g, ""))
     : [],

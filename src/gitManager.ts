@@ -20,12 +20,37 @@ export interface GitPostSyncResult {
   summaryText: string;
 }
 
+// Mask any embedded PAT or password in git URLs to prevent leakage in WhatsApp messages
+function sanitizeGitOutput(text: string): string {
+  return text.replace(/https?:\/\/[^@\s]+@/g, "https://***@");
+}
+
 async function runGit(cmd: string, cwd: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
   try {
-    const { stdout, stderr } = await execAsync(cmd, { cwd, timeout: 30000 });
-    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
+    const { stdout, stderr } = await execAsync(cmd, {
+      cwd,
+      timeout: 30000,
+      env: {
+        ...process.env,
+        // Prevent git from hanging on interactive password prompts
+        GIT_TERMINAL_PROMPT: "0",
+        // Automatically accept new SSH host keys without prompt
+        GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new",
+      },
+    });
+    return {
+      stdout: sanitizeGitOutput(stdout.trim()),
+      stderr: sanitizeGitOutput(stderr.trim()),
+      success: true,
+    };
   } catch (err: any) {
-    return { stdout: err.stdout?.trim() || "", stderr: err.stderr?.trim() || err.message, success: false };
+    const rawOut = err.stdout?.trim() || "";
+    const rawErr = err.stderr?.trim() || err.message;
+    return {
+      stdout: sanitizeGitOutput(rawOut),
+      stderr: sanitizeGitOutput(rawErr),
+      success: false,
+    };
   }
 }
 

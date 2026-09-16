@@ -84,4 +84,13 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   console.log("✔ Test 6 passed: Docker environment detector");
 }
 
+// Test 7: PAT Token Sanitization
+{
+  const rawError = "fatal: unable to access 'https://oauth2:HZsakmavqJosUPdyhHzJ@vhessel.bantulkab.go.id/bkppsdm/asn-corpu.git': Could not resolve host";
+  const sanitized = rawError.replace(/https?:\/\/[^@\s]+@/g, "https://***@");
+  assert.strictEqual(sanitized.includes("HZsakmavqJosUPdyhHzJ"), false);
+  assert.ok(sanitized.includes("https://***@vhessel.bantulkab.go.id"));
+  console.log("✔ Test 7 passed: Sensitive PAT token masked from output");
+}
+
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");

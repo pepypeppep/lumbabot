@@ -37,11 +37,137 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   console.log("✔ Test 3 passed: Quoted message context included");
 }
 
-// Test 4: Project Scanner - directory traversal protection
+// Test 4: WhatsApp Contact Mention in Group (with :device suffix in botJid)
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "@6285183096658 corpu fix authentication token";
+  const mentionedJids = ["6285183096658@s.whatsapp.net"];
+  const senderJid = "628123456789:2@s.whatsapp.net";
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    senderJid,
+    botJidWithDevice,
+    mentionedJids,
+    undefined,
+    { isGroup: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true, "Should trigger when mentioned by WhatsApp contact phone tag");
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.strictEqual(parsed.prompt, "fix authentication token");
+  assert.strictEqual(parsed.sender, "628123456789");
+  console.log("✔ Test 4 passed: WhatsApp contact mention with device JIDs");
+}
+
+// Test 5: WhatsApp Mobile Hidden Unicode Marks (\u200e Left-to-Right mark)
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "\u200e@6285183096658\u200e (lumbabot) run health check";
+  const mentionedJids = ["6285183096658@s.whatsapp.net"];
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    "628123456789@s.whatsapp.net",
+    botJidWithDevice,
+    mentionedJids,
+    undefined,
+    { isGroup: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true, "Should trigger despite \\u200e unicode markers");
+  assert.strictEqual(parsed.projectName, "lumbabot");
+  assert.strictEqual(parsed.prompt, "run health check");
+  console.log("✔ Test 5 passed: Stripping hidden unicode characters");
+}
+
+// Test 6: Tagging bot with no project or requesting help returns isHelp: true
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "@6285183096658";
+  const mentionedJids = ["6285183096658@s.whatsapp.net"];
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    "628123456789@s.whatsapp.net",
+    botJidWithDevice,
+    mentionedJids,
+    undefined,
+    { isGroup: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.isHelp, true, "Tagging bot without arguments triggers help");
+  console.log("✔ Test 6 passed: Help trigger when bot tagged with no arguments");
+}
+
+// Test 7: Quoting a bot message in group triggers execution
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "corpu retry the previous deploy";
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    "628123456789@s.whatsapp.net",
+    botJidWithDevice,
+    [],
+    "Previous failure message",
+    { isGroup: true, isQuotingBot: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true, "Replying to bot should trigger");
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.strictEqual(parsed.prompt, "retry the previous deploy");
+  console.log("✔ Test 7 passed: Quoting bot message in group");
+}
+
+// Test 8: Project Scanner - directory traversal protection
 {
   const scan = scanProjectDirectory("../../etc/passwd");
   assert.strictEqual(scan.found, false);
-  console.log("✔ Test 4 passed: Directory traversal prevented");
+  console.log("✔ Test 8 passed: Directory traversal prevented");
+}
+
+// Test 9: Si Lumba contact name and "berapa project di folder code" inquiry
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "@Si Lumba - Lumba berapa project di folder code";
+  const mentionedJids = ["6285183096658@s.whatsapp.net"];
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    "628123456789@s.whatsapp.net",
+    botJidWithDevice,
+    mentionedJids,
+    undefined,
+    { isGroup: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true, "Should trigger on Si Lumba mention");
+  assert.strictEqual(parsed.isHelp, true, "Should detect question about project count as help/inquiry");
+  console.log("✔ Test 9 passed: @Si Lumba - Lumba berapa project inquiry");
+}
+
+// Test 10: Polite filler words with project (e.g. @Si Lumba tolong corpu fix auth)
+{
+  const botJidWithDevice = "6285183096658:12@s.whatsapp.net";
+  const userMsg = "@Si Lumba tolong corpu fix auth";
+  const mentionedJids = ["6285183096658@s.whatsapp.net"];
+
+  const parsed = parseIncomingMessage(
+    userMsg,
+    "628123456789@s.whatsapp.net",
+    botJidWithDevice,
+    mentionedJids,
+    undefined,
+    { isGroup: true }
+  );
+
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.isHelp, false);
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.strictEqual(parsed.prompt, "fix auth");
+  console.log("✔ Test 10 passed: Polite filler words (@Si Lumba tolong corpu fix auth)");
 }
 
 // Test 5: Response Formatter

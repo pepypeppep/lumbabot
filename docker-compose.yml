@@ -8,9 +8,15 @@ services:
     env_file:
       - .env
     environment:
-      - PROJECTS_BASE_DIR=/home/zsn/code
-      - OPENCODE_MODEL=deepseek/deepseek-v4-flash
-      - OPENCODE_FLAGS=--auto
+      - PROJECTS_BASE_DIR=${PROJECTS_BASE_DIR:-/home/zsn/code}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-deepseek/deepseek-v4-flash}
+      - OPENCODE_FLAGS=${OPENCODE_FLAGS:---auto}
+      - OPENCODE_PATH=${OPENCODE_PATH:-opencode}
+      - BOT_NAME=${BOT_NAME:-lumba}
+      - AUTO_PULL=${AUTO_PULL:-true}
+      - AUTO_PUSH=${AUTO_PUSH:-true}
+      - ALLOWED_NUMBERS=${ALLOWED_NUMBERS:-}
+      - AUTH_SESSION_DIR=${AUTH_SESSION_DIR:-auth_info_baileys}
     volumes:
       # 1. WhatsApp session state (survives restarts so you only scan QR once)
       - ./auth_info_baileys:/app/auth_info_baileys

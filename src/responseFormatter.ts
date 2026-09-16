@@ -49,3 +49,32 @@ export function formatProjectNotFoundMessage(projectName: string, baseDir: strin
 
   return `❌ *Project Not Found*\nCould not find project directory: *${projectName}* inside \`${baseDir}\`.${availableList}`;
 }
+
+export function formatHelpMessage(available: string[], baseDir?: string): string {
+  const count = available.length;
+  const dirPath = baseDir || "/home/zsn/code";
+  const projList =
+    count > 0
+      ? available.slice(0, 15).map((p) => `• \`${p}\``).join("\n") +
+        (count > 15 ? `\n...dan ${count - 15} project lainnya` : "")
+      : `(Tidak ada direktori project ditemukan di \`${dirPath}\`)`;
+
+  return [
+    `🤖 *Lumba Bot - AI Coding Assistant*`,
+    `Siap menjalankan instruksi di repository / codebase kamu.`,
+    ``,
+    `📊 *Total Project di \`${dirPath}\`*: *${count} project*`,
+    ``,
+    `📌 *Format Perintah:*`,
+    `• \`@lumba <nama_project> <instruksi>\``,
+    `• \`@lumba (nama_project) <instruksi>\``,
+    ``,
+    `💡 *Contoh:*`,
+    `• \`@lumba corpu tolong perbaiki auth token bug\``,
+    `• \`@lumba (lumbabot) tambahkan unit test\``,
+    `• Reply pesan error / stack trace: \`@lumba corpu perbaiki error ini\``,
+    ``,
+    `📂 *Daftar Project (${count}):*`,
+    projList,
+  ].join("\n");
+}

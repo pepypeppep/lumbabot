@@ -3,6 +3,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   WAMessage,
+  jidNormalizedUser,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
@@ -12,17 +13,37 @@ import fs from "node:fs";
 
 import { CONFIG } from "./config.js";
 import { parseIncomingMessage } from "./messageParser.js";
-import { scanProjectDirectory } from "./projectScanner.js";
+import { scanProjectDirectory, getAvailableProjects } from "./projectScanner.js";
 import { preExecutionGitSync, postExecutionGitSync } from "./gitManager.js";
 import { runOpenCode } from "./opencodeRunner.js";
 import {
   formatCommandDoneMessage,
   formatRunningMessage,
   formatProjectNotFoundMessage,
+  formatHelpMessage,
 } from "./responseFormatter.js";
 
 // Concurrency lock to avoid overlapping edits on the same project
 const activeLocks = new Set<string>();
+
+// Helper to unwrap ephemeral, viewOnce, or wrapped messages
+function getRealMessage(message: any): any {
+  if (!message) return null;
+  let current = message;
+  while (
+    current?.ephemeralMessage?.message ||
+    current?.viewOnceMessage?.message ||
+    current?.viewOnceMessageV2?.message ||
+    current?.documentWithCaptionMessage?.message
+  ) {
+    current =
+      current?.ephemeralMessage?.message ||
+      current?.viewOnceMessage?.message ||
+      current?.viewOnceMessageV2?.message ||
+      current?.documentWithCaptionMessage?.message;
+  }
+  return current;
+}
 
 export async function startWhatsAppClient() {
   const sessionPath = path.resolve(CONFIG.authSessionDir);
@@ -71,7 +92,7 @@ export async function startWhatsAppClient() {
         console.log("[Lumba] Logged out. Delete auth folder and rescan QR code to reconnect.");
       }
     } else if (connection === "open") {
-      const botNumber = sock.user?.id.split(":")[0] || "Unknown";
+      const botNumber = sock.user?.id ? jidNormalizedUser(sock.user.id).split("@")[0] : "Unknown";
       console.log(`\n🎉 [Lumba] Bot successfully connected as @${botNumber}!`);
       console.log(`[Lumba] Ready to receive commands in groups and chats.`);
     }
@@ -87,26 +108,52 @@ export async function startWhatsAppClient() {
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid) continue;
 
+      const isGroup = remoteJid.endsWith("@g.us");
       const senderJid = msg.key.participant || remoteJid;
       const botJid = sock.user?.id || "";
+      const botLid = sock.user?.lid || "";
+
+      // Unwrap ephemeral / viewOnce messages if group has disappearing messages enabled
+      const realMessage = getRealMessage(msg.message);
+      if (!realMessage) continue;
 
       // Extract message text
       const rawText =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
+        realMessage.conversation ||
+        realMessage.extendedTextMessage?.text ||
+        realMessage.imageMessage?.caption ||
+        realMessage.videoMessage?.caption ||
+        realMessage.documentMessage?.caption ||
         "";
 
       if (!rawText.trim()) continue;
 
       // Extract mentions & quoted message
-      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const contextInfo =
+        realMessage.extendedTextMessage?.contextInfo ||
+        realMessage.imageMessage?.contextInfo ||
+        realMessage.videoMessage?.contextInfo ||
+        realMessage.documentMessage?.contextInfo;
+
       const mentionedJids: string[] = contextInfo?.mentionedJid || [];
-      const quotedMessage = contextInfo?.quotedMessage;
+      const quotedMsgRaw = contextInfo?.quotedMessage ? getRealMessage(contextInfo.quotedMessage) : undefined;
       const quotedText =
-        (quotedMessage?.conversation ||
-        quotedMessage?.extendedTextMessage?.text ||
-        quotedMessage?.imageMessage?.caption) || undefined;
+        quotedMsgRaw?.conversation ||
+        quotedMsgRaw?.extendedTextMessage?.text ||
+        quotedMsgRaw?.imageMessage?.caption ||
+        quotedMsgRaw?.videoMessage?.caption ||
+        quotedMsgRaw?.documentMessage?.caption ||
+        undefined;
+
+      const quotedParticipant = contextInfo?.participant;
+      const botNormalizedJid = botJid ? jidNormalizedUser(botJid) : "";
+      const botNormalizedLid = botLid ? jidNormalizedUser(botLid) : "";
+
+      const isQuotingBot = Boolean(
+        quotedParticipant &&
+        ((botNormalizedJid && jidNormalizedUser(quotedParticipant) === botNormalizedJid) ||
+         (botNormalizedLid && jidNormalizedUser(quotedParticipant) === botNormalizedLid))
+      );
 
       // Parse trigger
       const parsed = parseIncomingMessage(
@@ -114,19 +161,29 @@ export async function startWhatsAppClient() {
         senderJid,
         botJid,
         mentionedJids,
-        quotedText
+        quotedText,
+        {
+          botLid,
+          isGroup,
+          isQuotingBot,
+        }
       );
 
-      if (!parsed.isTriggered) continue;
-
-      if (!parsed.projectName) {
+      if (!parsed.isTriggered) {
         if (parsed.reason) {
-          await sock.sendMessage(
-            remoteJid,
-            { text: `⚠️ ${parsed.reason}` },
-            { quoted: msg }
-          );
+          console.log(`[Lumba] Ignored message from ${senderJid}: ${parsed.reason}`);
         }
+        continue;
+      }
+
+      console.log(`[Lumba] Triggered by ${parsed.sender} in ${remoteJid}: "${rawText.slice(0, 60)}"`);
+
+      // If help was requested or no project name was provided
+      if (parsed.isHelp || !parsed.projectName) {
+        console.log(`[Lumba] Sending help / project list to ${remoteJid}...`);
+        const available = getAvailableProjects(CONFIG.projectsBaseDir);
+        const helpMessage = formatHelpMessage(available, CONFIG.projectsBaseDir);
+        await sock.sendMessage(remoteJid, { text: helpMessage }, { quoted: msg });
         continue;
       }
 

@@ -1,0 +1,26 @@
+services:
+  lumba:
+    build: .
+    container_name: lumba-bot
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - PROJECTS_BASE_DIR=/home/zsn/code
+      - OPENCODE_MODEL=deepseek/deepseek-v4-flash
+      - OPENCODE_FLAGS=--auto
+    volumes:
+      # 1. WhatsApp session state (survives restarts so you only scan QR once)
+      - ./auth_info_baileys:/app/auth_info_baileys
+
+      # 2. Host project files: opencode runs directly on these codebases
+      - /home/zsn/code:/home/zsn/code
+
+      # 3. Git & SSH credentials for automatic git pull and git push
+      - ${HOME}/.ssh:/root/.ssh:ro
+      - ${HOME}/.gitconfig:/root/.gitconfig:ro
+
+      # 4. OpenCode configuration & provider keys
+      - ${HOME}/.config/opencode:/root/.config/opencode:ro

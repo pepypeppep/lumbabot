@@ -1,0 +1,118 @@
+import { spawn } from "node:child_process";
+import { CONFIG } from "./config.js";
+
+export interface OpenCodeRunResult {
+  success: boolean;
+  durationMs: number;
+  durationFormatted: string;
+  output: string;
+  bugCause: string;
+  actionsDone: string;
+  rawOutput: string;
+  exitCode: number | null;
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSec = seconds % 60;
+  return `${minutes}m ${remainingSec}s`;
+}
+
+export async function runOpenCode(projectDir: string, prompt: string): Promise<OpenCodeRunResult> {
+  const startTime = Date.now();
+
+  // Enhance prompt to ensure opencode provides structured feedback
+  const enhancedPrompt = `${prompt}
+
+IMPORTANT: When you complete this task, conclude your response with a concise summary in this format:
+Bug Cause: <explain the root cause of the bug if applicable, or N/A>
+Actions Done: <bullet list of what was changed, created, or tested>
+`;
+
+  const args = [
+    "run",
+    "--dir",
+    projectDir,
+    "-m",
+    CONFIG.opencodeModel,
+    ...CONFIG.opencodeFlags,
+    enhancedPrompt,
+  ];
+
+  return new Promise((resolve) => {
+    console.log(`[OpenCode] Spawning: ${CONFIG.opencodePath} ${args.join(" ")} in ${projectDir}`);
+
+    const child = spawn(CONFIG.opencodePath, args, {
+      cwd: projectDir,
+      env: { ...process.env },
+      shell: false,
+    });
+
+    let stdoutData = "";
+    let stderrData = "";
+
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      stdoutData += text;
+      process.stdout.write(`[OpenCode OUT] ${text}`);
+    });
+
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderrData += text;
+      process.stderr.write(`[OpenCode ERR] ${text}`);
+    });
+
+    child.on("error", (err) => {
+      const durationMs = Date.now() - startTime;
+      resolve({
+        success: false,
+        durationMs,
+        durationFormatted: formatDuration(durationMs),
+        output: `Failed to start opencode: ${err.message}`,
+        bugCause: "Execution failed to launch",
+        actionsDone: `Error: ${err.message}`,
+        rawOutput: stderrData,
+        exitCode: -1,
+      });
+    });
+
+    child.on("close", (code) => {
+      const durationMs = Date.now() - startTime;
+      const combined = (stdoutData + "\n" + stderrData).trim();
+
+      // Parse Bug Cause & Actions Done if present
+      let bugCause = "Identified and resolved according to requested instructions.";
+      let actionsDone = "Automated edits applied via OpenCode.";
+
+      const bugMatch = combined.match(/Bug Cause:\s*([^\n]+(?:\n(?!(Actions Done|Summary):)[^\n]+)*)/i);
+      if (bugMatch && bugMatch[1]) {
+        bugCause = bugMatch[1].trim();
+      }
+
+      const actionsMatch = combined.match(/Actions Done:\s*([\s\S]+?)(?:\n\n|\n[A-Z][a-z]+:|$)/i);
+      if (actionsMatch && actionsMatch[1]) {
+        actionsDone = actionsMatch[1].trim();
+      } else {
+        // Fallback to last non-empty lines of output if parsing didn't find specific headers
+        const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length > 0) {
+          actionsDone = lines.slice(-4).join("\n");
+        }
+      }
+
+      resolve({
+        success: code === 0,
+        durationMs,
+        durationFormatted: formatDuration(durationMs),
+        output: combined,
+        bugCause,
+        actionsDone,
+        rawOutput: combined,
+        exitCode: code,
+      });
+    });
+  });
+}

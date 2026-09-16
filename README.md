@@ -2,12 +2,13 @@
 
 **Lumba** is a WhatsApp bot helper that connects to your WhatsApp groups, listens for mentions or quoted messages, navigates to your projects in `/home/zsn/code/`, and runs **OpenCode** autonomously with the **DeepSeek-v4-flash** model in **YOLO mode** (`--auto`).
 
-Before execution, Lumba runs `git pull` to fetch the latest changes; after execution, Lumba commits and runs `git push` to your repository, reporting the bug cause, actions taken, git sync status, and total execution time.
+Git operations (`git pull`, `git push`, and `git status`) are separate commands that you run on-demand, allowing you to execute AI prompts without pulling or pushing automatically.
 
 ---
 
 ## ⚡ Workflow
 
+### 1. Running an AI Prompt (Without auto pull/push)
 ```
 1. User in Group:
    "@lumba corpu please fix the JWT expiration error" 
@@ -18,10 +19,8 @@ Before execution, Lumba runs `git pull` to fetch the latest changes; after execu
 
 3. Server Automation:
    • Scans /home/zsn/code/ for the "corpu" directory
-   • Checks Git branch & runs `git pull`
    • Executes: opencode run --dir /home/zsn/code/corpu -m deepseek/deepseek-v4-flash --auto "<prompt>"
-   • Checks git status, creates a commit if files changed, and runs `git push`
-   • Checks if origin is up to date
+   • Inspects files modified in working tree
 
 4. Lumba WhatsApp Response:
    ✅ Command Done
@@ -36,20 +35,38 @@ Before execution, Lumba runs `git pull` to fetch the latest changes; after execu
    - Added unit test cases
 
    📦 Git Repository Status:
-   • Git Pull: Pulled latest changes on main
    • Files Modified: 2 file(s)
-   • Git Push: Pushed successfully to origin/main
-   • Codebase Sync: ✅ Up to date with remote
+   💡 Next Step: Gunakan `@lumba corpu git push` untuk commit & push perubahan.
+```
+
+### 2. Running Separate Git Commands
+```
+• Pull latest changes:
+  "@lumba corpu git pull"
+
+• Commit & Push changes:
+  "@lumba corpu git push fix auth error"
+  (or simply "@lumba corpu git push")
+
+• Check repo status:
+  "@lumba corpu git status"
 ```
 
 ---
 
 ## 🛠️ Supported Mention Formats
 
-* Standard mention: `@lumba corpu please fix the bug`
-* Bracket format: `@Lumba (corpu) add unit test for checkout`
-* Square brackets: `@lumba [corpu] update packages`
-* Quoted message: Reply to a stack trace or log in WhatsApp with `@lumba corpu fix this` (Lumba automatically extracts the quoted error log into the prompt context!).
+* **AI Prompts**:
+  * `@lumba corpu please fix the bug`
+  * `@Lumba (corpu) add unit test for checkout`
+  * `@lumba [corpu] update packages`
+  * Reply to a stack trace: `@lumba corpu fix this`
+
+* **Dedicated Git Commands**:
+  * `@lumba corpu git pull`
+  * `@lumba corpu git push [commit message]`
+  * `@lumba corpu git status`
+  * Bracket syntax is also supported: `@lumba (corpu) git pull`, `@lumba (corpu) git push`
 
 ---
 
@@ -108,6 +125,6 @@ The `docker-compose.yml` mounts:
 | `OPENCODE_MODEL` | Model passed to opencode | `deepseek/deepseek-v4-flash` |
 | `OPENCODE_FLAGS` | Execution flags (`--auto` for YOLO mode) | `--auto` |
 | `BOT_NAME` | Bot trigger keyword | `lumba` |
-| `AUTO_PULL` | Run `git pull` before opencode | `true` |
-| `AUTO_PUSH` | Auto-commit and run `git push` | `true` |
+| `AUTO_PULL` | Run `git pull` before opencode (optional) | `false` |
+| `AUTO_PUSH` | Auto-commit and run `git push` after opencode (optional) | `false` |
 | `ALLOWED_NUMBERS` | Optional whitelist (comma-separated phone numbers) | Empty (allows group members) |

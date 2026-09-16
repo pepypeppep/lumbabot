@@ -14,13 +14,23 @@ import fs from "node:fs";
 import { CONFIG } from "./config.js";
 import { parseIncomingMessage } from "./messageParser.js";
 import { scanProjectDirectory, getAvailableProjects } from "./projectScanner.js";
-import { preExecutionGitSync, postExecutionGitSync } from "./gitManager.js";
+import {
+  preExecutionGitSync,
+  postExecutionGitSync,
+  executeGitPull,
+  executeGitPush,
+  executeGitStatus,
+  getWorkingTreeStatus,
+} from "./gitManager.js";
 import { runOpenCode } from "./opencodeRunner.js";
 import {
   formatCommandDoneMessage,
   formatRunningMessage,
   formatProjectNotFoundMessage,
   formatHelpMessage,
+  formatGitPullMessage,
+  formatGitPushMessage,
+  formatGitStatusMessage,
 } from "./responseFormatter.js";
 
 // Concurrency lock to avoid overlapping edits on the same project
@@ -236,37 +246,62 @@ async function handleCommand(
   activeLocks.add(projectPath);
 
   try {
-    // 3. Send initial acknowledge "Command Running..."
+    // Check if this is a dedicated Git command (pull / push / status)
+    if (parsed.gitCommand) {
+      const gitCmd = parsed.gitCommand;
+      console.log(`[Lumba] Handling git ${gitCmd.action} for project "${canonicalName}"...`);
+
+      if (gitCmd.action === "pull") {
+        const pullResult = await executeGitPull(projectPath, gitCmd.args);
+        const reply = formatGitPullMessage(canonicalName, pullResult);
+        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+        return;
+      }
+
+      if (gitCmd.action === "push") {
+        const pushResult = await executeGitPush(projectPath, gitCmd.args);
+        const reply = formatGitPushMessage(canonicalName, pushResult);
+        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+        return;
+      }
+
+      if (gitCmd.action === "status") {
+        const statusResult = await executeGitStatus(projectPath);
+        const reply = formatGitStatusMessage(canonicalName, statusResult);
+        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+        return;
+      }
+    }
+
+    // 3. Normal OpenCode command: Send initial acknowledge "Command Running..."
     const runningMsg = formatRunningMessage(canonicalName, parsed.prompt || prompt);
     await sock.sendMessage(remoteJid, { text: runningMsg }, { quoted: msg });
 
-    // 4. Pre-execution Git pull
-    console.log(`[Lumba] Performing pre-execution git pull on ${projectPath}...`);
-    const preGit = await preExecutionGitSync(projectPath);
-    console.log(`[Lumba] Git pull result: ${preGit.pullStatus}`);
+    // 4. Pre-execution Git pull (ONLY if CONFIG.autoPull is explicitly enabled)
+    let preGitPullStatus = "Skipped";
+    if (CONFIG.autoPull) {
+      console.log(`[Lumba] Auto-pull enabled: Performing pre-execution git pull on ${projectPath}...`);
+      const preGit = await preExecutionGitSync(projectPath);
+      preGitPullStatus = preGit.pullStatus;
+      console.log(`[Lumba] Git pull result: ${preGitPullStatus}`);
+    } else {
+      console.log(`[Lumba] Skipping git pull before execution (auto-pull disabled).`);
+    }
 
-    // 5. Run OpenCode in YOLO mode with deepseek-v4-flash
+    // 5. Run OpenCode in YOLO mode with configured model
     console.log(`[Lumba] Executing OpenCode on ${projectPath}...`);
     const opencodeResult = await runOpenCode(projectPath, prompt);
     console.log(`[Lumba] OpenCode finished in ${opencodeResult.durationFormatted}. Exit code: ${opencodeResult.exitCode}`);
 
-    // 6. Post-execution Git status, commit, and git push (only if OpenCode ran)
-    let postGit: any = {
-      isGit: false,
-      branch: "none",
-      filesChanged: 0,
-      filesList: [],
-      pushStatus: "N/A",
-      isUpToDate: true,
-      summaryText: "N/A",
-    };
-
-    if (opencodeResult.exitCode === -1) {
-      console.log(`[Lumba] Skipping post-execution git sync (OpenCode failed to launch).`);
-    } else {
-      console.log(`[Lumba] Performing post-execution git commit & push on ${projectPath}...`);
+    // 6. Post-execution Git status (ONLY commit & push if CONFIG.autoPush is explicitly enabled)
+    let postGit: any;
+    if (CONFIG.autoPush && opencodeResult.exitCode !== -1) {
+      console.log(`[Lumba] Auto-push enabled: Performing post-execution git commit & push on ${projectPath}...`);
       postGit = await postExecutionGitSync(projectPath, parsed.prompt || "Auto-fix");
       console.log(`[Lumba] Git push result: ${postGit.pushStatus}`);
+    } else {
+      console.log(`[Lumba] Skipping git push (auto-push disabled). Inspecting working tree status...`);
+      postGit = await getWorkingTreeStatus(projectPath);
     }
 
     // 7. Format final response
@@ -275,7 +310,7 @@ async function handleCommand(
       projectPath,
       opencodeResult,
       gitResult: postGit,
-      pullStatus: preGit.pullStatus,
+      pullStatus: preGitPullStatus,
     });
 
     // 8. Reply back to the user

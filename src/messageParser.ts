@@ -1,6 +1,12 @@
 import { CONFIG } from "./config.js";
 import { jidNormalizedUser } from "@whiskeysockets/baileys";
 
+export interface GitCommandInfo {
+  action: "pull" | "push" | "status";
+  args?: string;
+  raw: string;
+}
+
 export interface ParsedBotCommand {
   isTriggered: boolean;
   isHelp?: boolean;
@@ -10,6 +16,7 @@ export interface ParsedBotCommand {
   quotedText?: string;
   fullPrompt?: string;
   reason?: string;
+  gitCommand?: GitCommandInfo | null;
 }
 
 export interface ParseMessageOptions {
@@ -168,6 +175,9 @@ export function parseIncomingMessage(
     fullPrompt = "Please analyze this project, inspect git status, and check for any bugs or pending issues.";
   }
 
+  const promptForGit = prompt.replace(/^(tolong|coba|bantu|please|pls|mohon)\s+/i, "").trim();
+  const gitCommand = extractGitCommand(promptForGit);
+
   return {
     isTriggered: true,
     isHelp: false,
@@ -176,6 +186,42 @@ export function parseIncomingMessage(
     sender: senderNumber,
     quotedText: quotedMessageText,
     fullPrompt,
+    gitCommand,
   };
+}
+
+export function extractGitCommand(promptStr: string): GitCommandInfo | null {
+  const trimmed = promptStr.trim();
+  if (!trimmed) return null;
+
+  // 1. Explicit "git <action>" commands:
+  // e.g. "git pull", "git pull origin main", "git push", "git push fix auth", "git status"
+  const gitMatch = trimmed.match(/^git\s+(pull|push|status)(?:\s+(.*))?$/i);
+  if (gitMatch) {
+    const action = gitMatch[1].toLowerCase() as GitCommandInfo["action"];
+    const args = gitMatch[2]?.trim() || undefined;
+    return { action, args, raw: trimmed };
+  }
+
+  // 2. Standalone "pull" or "pull origin ..."
+  if (/^pull(\s+origin(\s+\S+)?)?$/i.test(trimmed)) {
+    const parts = trimmed.split(/\s+/);
+    const args = parts.slice(1).join(" ") || undefined;
+    return { action: "pull", args, raw: trimmed };
+  }
+
+  // 3. Standalone "push" or "push origin ..." or "push -m ..."
+  if (/^push(\s+origin(\s+\S+)?)?$/i.test(trimmed) || /^push\s+-m\s+(.*)$/i.test(trimmed)) {
+    const mMatch = trimmed.match(/^push\s+-m\s+(.*)$/i);
+    const args = mMatch ? mMatch[1].trim() : (trimmed.split(/\s+/).slice(1).join(" ") || undefined);
+    return { action: "push", args, raw: trimmed };
+  }
+
+  // 4. Standalone "status"
+  if (/^status$/i.test(trimmed)) {
+    return { action: "status", args: undefined, raw: trimmed };
+  }
+
+  return null;
 }
 

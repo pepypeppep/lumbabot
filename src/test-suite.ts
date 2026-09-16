@@ -1,7 +1,12 @@
 import assert from "node:assert";
-import { parseIncomingMessage } from "./messageParser.js";
+import { parseIncomingMessage, extractGitCommand } from "./messageParser.js";
 import { scanProjectDirectory } from "./projectScanner.js";
-import { formatCommandDoneMessage } from "./responseFormatter.js";
+import {
+  formatCommandDoneMessage,
+  formatGitPullMessage,
+  formatGitPushMessage,
+  formatGitStatusMessage,
+} from "./responseFormatter.js";
 import { detectDockerEnvironment } from "./dockerDetector.js";
 
 console.log("=== RUNNING LUMBA UNIT TESTS ===");
@@ -249,6 +254,125 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   assert.ok(formattedFail.includes("❌ *Command Failed*"));
   assert.ok(formattedFail.includes("Binary opencode not found in PATH"));
   console.log("✔ Test 8 passed: Error formatting shows Command Failed with clear cause");
+}
+
+// Test 9: Git Pull Command Parsing
+{
+  const msg = "@lumba corpu git pull";
+  const parsed = parseIncomingMessage(msg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.ok(parsed.gitCommand);
+  assert.strictEqual(parsed.gitCommand?.action, "pull");
+  console.log("✔ Test 9 passed: @lumba corpu git pull parsed as git pull command");
+}
+
+// Test 10: Git Push with commit message
+{
+  const msg = "@Lumba (corpu) git push fix authentication token";
+  const parsed = parseIncomingMessage(msg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.ok(parsed.gitCommand);
+  assert.strictEqual(parsed.gitCommand?.action, "push");
+  assert.strictEqual(parsed.gitCommand?.args, "fix authentication token");
+  console.log("✔ Test 10 passed: @Lumba (corpu) git push <msg> parsed as git push command with message");
+}
+
+// Test 11: Git Status Command Parsing
+{
+  const msg = "@lumba corpu git status";
+  const parsed = parseIncomingMessage(msg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.ok(parsed.gitCommand);
+  assert.strictEqual(parsed.gitCommand?.action, "status");
+  console.log("✔ Test 11 passed: @lumba corpu git status parsed as git status command");
+}
+
+// Test 12: Standalone pull and push commands
+{
+  const pullMsg = "@lumba corpu pull";
+  const parsedPull = parseIncomingMessage(pullMsg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsedPull.gitCommand?.action, "pull");
+
+  const pushMsg = "@lumba corpu push";
+  const parsedPush = parseIncomingMessage(pushMsg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsedPush.gitCommand?.action, "push");
+
+  const statusMsg = "@lumba corpu status";
+  const parsedStatus = parseIncomingMessage(statusMsg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsedStatus.gitCommand?.action, "status");
+  console.log("✔ Test 12 passed: Standalone pull, push, and status keywords recognized");
+}
+
+// Test 13: Normal prompt does NOT trigger gitCommand
+{
+  const msg = "@lumba corpu tolong perbaiki auth bug";
+  const parsed = parseIncomingMessage(msg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.projectName, "corpu");
+  assert.strictEqual(parsed.gitCommand, null);
+  console.log("✔ Test 13 passed: Normal prompt does not trigger git command");
+}
+
+// Test 14: Prompt containing 'push notification' does NOT trigger git push
+{
+  const msg = "@lumba corpu implement push notification feature";
+  const parsed = parseIncomingMessage(msg, "628123456789@s.whatsapp.net", "628999999999@s.whatsapp.net", []);
+  assert.strictEqual(parsed.isTriggered, true);
+  assert.strictEqual(parsed.gitCommand, null);
+  console.log("✔ Test 14 passed: 'push notification' prompt does not trigger git push");
+}
+
+// Test 15: Format Git Pull Response
+{
+  const formatted = formatGitPullMessage("corpu", {
+    isGit: true,
+    branch: "main",
+    success: true,
+    pullStatus: "Already up to date",
+    output: "Already up to date.",
+  });
+  assert.ok(formatted.includes("✅ *Git Pull Succeeded*"));
+  assert.ok(formatted.includes("📁 *Project*: corpu"));
+  assert.ok(formatted.includes("🌿 *Branch*: `main`"));
+  console.log("✔ Test 15 passed: formatGitPullMessage output");
+}
+
+// Test 16: Format Git Push Response
+{
+  const formatted = formatGitPushMessage("corpu", {
+    isGit: true,
+    branch: "main",
+    success: true,
+    filesChanged: 2,
+    filesList: ["src/index.ts", "package.json"],
+    pushStatus: "Pushed successfully to origin/main",
+    commitMsg: "fix: update index and package",
+    output: "Everything up-to-date",
+  });
+  assert.ok(formatted.includes("✅ *Git Push Succeeded*"));
+  assert.ok(formatted.includes("📦 *Files Committed*: 2 file(s)"));
+  assert.ok(formatted.includes("Pushed successfully to origin/main"));
+  console.log("✔ Test 16 passed: formatGitPushMessage output");
+}
+
+// Test 17: Format Git Status Response
+{
+  const formatted = formatGitStatusMessage("corpu", {
+    isGit: true,
+    branch: "main",
+    filesChanged: 1,
+    filesList: ["src/auth.ts"],
+    unpushedCommits: 0,
+    isUpToDate: false,
+    summaryText: "Needs push",
+  });
+  assert.ok(formatted.includes("📦 *Git Status: corpu*"));
+  assert.ok(formatted.includes("Modified/Untracked Files*: 1 file(s)"));
+  assert.ok(formatted.includes("src/auth.ts"));
+  console.log("✔ Test 17 passed: formatGitStatusMessage output");
 }
 
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");

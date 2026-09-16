@@ -34,8 +34,8 @@ export const CONFIG = {
   // --auto runs opencode in YOLO / auto-approve mode for permissions
   opencodeFlags: (process.env.OPENCODE_FLAGS || "--auto").split(" ").filter(Boolean),
   botName: (process.env.BOT_NAME || "lumba").toLowerCase(),
-  autoPull: process.env.AUTO_PULL !== "false",
-  autoPush: process.env.AUTO_PUSH !== "false",
+  autoPull: process.env.AUTO_PULL === "true",
+  autoPush: process.env.AUTO_PUSH === "true",
   authSessionDir: process.env.AUTH_SESSION_DIR || "auth_info_baileys",
   allowedNumbers: process.env.ALLOWED_NUMBERS
     ? process.env.ALLOWED_NUMBERS.split(",").map((s) => s.trim().replace(/[^0-9]/g, ""))

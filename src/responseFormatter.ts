@@ -12,8 +12,7 @@ export interface FormatOptions {
 export function formatCommandDoneMessage(opts: FormatOptions): string {
   const { projectName, opencodeResult, gitResult, pullStatus } = opts;
 
-  const statusEmoji = opencodeResult.success ? "✅" : "⚠️";
-  const title = `${statusEmoji} *Command Done*`;
+  const title = opencodeResult.success ? "✅ *Command Done*" : "❌ *Command Failed*";
 
   const sections: string[] = [
     title,

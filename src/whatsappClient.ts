@@ -250,10 +250,24 @@ async function handleCommand(
     const opencodeResult = await runOpenCode(projectPath, prompt);
     console.log(`[Lumba] OpenCode finished in ${opencodeResult.durationFormatted}. Exit code: ${opencodeResult.exitCode}`);
 
-    // 6. Post-execution Git status, commit, and git push
-    console.log(`[Lumba] Performing post-execution git commit & push on ${projectPath}...`);
-    const postGit = await postExecutionGitSync(projectPath, parsed.prompt || "Auto-fix");
-    console.log(`[Lumba] Git push result: ${postGit.pushStatus}`);
+    // 6. Post-execution Git status, commit, and git push (only if OpenCode ran)
+    let postGit: any = {
+      isGit: false,
+      branch: "none",
+      filesChanged: 0,
+      filesList: [],
+      pushStatus: "N/A",
+      isUpToDate: true,
+      summaryText: "N/A",
+    };
+
+    if (opencodeResult.exitCode === -1) {
+      console.log(`[Lumba] Skipping post-execution git sync (OpenCode failed to launch).`);
+    } else {
+      console.log(`[Lumba] Performing post-execution git commit & push on ${projectPath}...`);
+      postGit = await postExecutionGitSync(projectPath, parsed.prompt || "Auto-fix");
+      console.log(`[Lumba] Git push result: ${postGit.pushStatus}`);
+    }
 
     // 7. Format final response
     const finalReport = formatCommandDoneMessage({

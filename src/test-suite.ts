@@ -219,4 +219,36 @@ console.log("=== RUNNING LUMBA UNIT TESTS ===");
   console.log("✔ Test 7 passed: Sensitive PAT token masked from output");
 }
 
+// Test 8: Failed Command Response Formatting
+{
+  const formattedFail = formatCommandDoneMessage({
+    projectName: "corpu",
+    projectPath: "/home/zsn/code/corpu",
+    opencodeResult: {
+      success: false,
+      durationMs: 120,
+      durationFormatted: "0s",
+      output: "Failed to start opencode: Binary opencode not found in PATH",
+      bugCause: "Execution failed to launch (Binary opencode not found in PATH)",
+      actionsDone: "Error: Binary opencode not found in PATH",
+      rawOutput: "",
+      exitCode: -1,
+    },
+    gitResult: {
+      isGit: false,
+      branch: "none",
+      filesChanged: 0,
+      filesList: [],
+      pushStatus: "N/A",
+      isUpToDate: true,
+      summaryText: "N/A",
+    },
+    pullStatus: "Not a git repository",
+  });
+
+  assert.ok(formattedFail.includes("❌ *Command Failed*"));
+  assert.ok(formattedFail.includes("Binary opencode not found in PATH"));
+  console.log("✔ Test 8 passed: Error formatting shows Command Failed with clear cause");
+}
+
 console.log("\nALL TESTS PASSED SUCCESSFULLY! 🎉\n");

@@ -11,6 +11,10 @@ services:
       - PROJECTS_BASE_DIR=/home/zsn/code
       - OPENCODE_MODEL=deepseek/deepseek-v4-flash
       - OPENCODE_FLAGS=--auto
+      - GIT_AUTHOR_NAME=Lumba Bot
+      - GIT_AUTHOR_EMAIL=lumba@vhessel.local
+      - GIT_COMMITTER_NAME=Lumba Bot
+      - GIT_COMMITTER_EMAIL=lumba@vhessel.local
     volumes:
       # 1. WhatsApp session state (survives restarts so you only scan QR once)
       - ./auth_info_baileys:/app/auth_info_baileys
@@ -18,9 +22,8 @@ services:
       # 2. Host project files: opencode runs directly on these codebases
       - /home/zsn/code:/home/zsn/code
 
-      # 3. Git & SSH credentials for automatic git pull and git push
+      # 3. SSH credentials for automatic git pull and git push
       - ${HOME}/.ssh:/root/.ssh:ro
-      - ${HOME}/.gitconfig:/root/.gitconfig:ro
 
       # 4. OpenCode configuration & provider keys
       - ${HOME}/.config/opencode:/root/.config/opencode:ro

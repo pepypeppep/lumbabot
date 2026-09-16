@@ -32,6 +32,11 @@ async function runGit(cmd: string, cwd: string): Promise<{ stdout: string; stder
       timeout: 30000,
       env: {
         ...process.env,
+        // Ensure commits succeed even without a global .gitconfig on the system
+        GIT_AUTHOR_NAME: CONFIG.gitAuthorName,
+        GIT_AUTHOR_EMAIL: CONFIG.gitAuthorEmail,
+        GIT_COMMITTER_NAME: CONFIG.gitAuthorName,
+        GIT_COMMITTER_EMAIL: CONFIG.gitAuthorEmail,
         // Prevent git from hanging on interactive password prompts
         GIT_TERMINAL_PROMPT: "0",
         // Automatically accept new SSH host keys without prompt

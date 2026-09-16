@@ -69,7 +69,8 @@ Actions Done: <bullet list of what was changed, created, or tested>
 
     const child = spawn(CONFIG.opencodePath, args, {
       cwd: projectDir,
-      env: { ...process.env },
+      env: { ...process.env, CI: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
       shell: false,
     });
 
